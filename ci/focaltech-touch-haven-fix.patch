@@ -1,0 +1,22 @@
+diff --git a/drivers/input/touchscreen/focaltech_touch/focaltech_core.h b/drivers/input/touchscreen/focaltech_touch/focaltech_core.h
+index 0c28c8a..0d3a733 100644
+--- a/drivers/input/touchscreen/focaltech_touch/focaltech_core.h
++++ b/drivers/input/touchscreen/focaltech_touch/focaltech_core.h
+@@ -61,7 +61,9 @@
+ #include <linux/sched.h>
+ #include <linux/kthread.h>
+ #include <linux/dma-mapping.h>
++#ifdef CONFIG_FTS_TRUSTED_TOUCH
+ #include <linux/haven/hh_irq_lend.h>
++#endif
+ #include "focaltech_common.h"
+ 
+ /*****************************************************************************
+@@ -260,6 +262,7 @@ struct trusted_touch_vm_info {
+ #endif
+ };
+ #endif
++#endif /* CONFIG_FTS_TRUSTED_TOUCH */
+ 
+ struct fts_ts_data {
+ 	struct i2c_client *client;

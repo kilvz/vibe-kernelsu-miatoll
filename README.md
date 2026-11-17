@@ -1,21 +1,28 @@
 # vibe-kernelsu-miatoll
 
-LineageOS 22.2 kernel (4.14.336, ThinLTO) for the Redmi Note 9 Pro / miatoll
-(joyeuse, curtana, excalibur, gram) with:
+crDroid 16.0 kernel (4.14.357, no ThinLTO) for the Redmi Note 9 Pro / miatoll
+(joyeuse, curtana, excalibur, gram) with **KernelSU-Next built in** +
+**DroidSpaces support** + **NetHunter (defconfig-only)**.
 
-- **FT8756 touch fix** — the replacement-screen touch fix (touch no longer
-  needs a screen off/on toggle after every boot). Same patch as
-  [vibe-kernel-miatoll](https://github.com/kilvz/vibe-kernel-miatoll)
-  (touch fix v5: delayed suspend→resume 20 s after probe).
 - **KernelSU-Next built in** — root lives in the kernel itself (legacy
   branch, for 4.14 non-GKI kernels). No boot.img patching with APatch or
   Magisk needed.
+- **DroidSpaces support** — namespaces, cgroups (incl. CGROUP_NS),
+  overlayfs, netfilter, for running Linux containers. Install the
+  DroidSpaces app (https://github.com/ravindu644/droidspaces-oss/releases/latest),
+  grant root, let it install the backend.
+- **NetHunter (defconfig-only)** — HID/BadUSB, RNDIS, mac80211 + in-tree
+  USB Wi-Fi drivers (rtl8xxxu, rt2800usb, rtl8187), Bluetooth Arsenal,
+  CAN, RTL-SDR, USB serial. No source patches: the source-patched
+  NetHunter builds do not boot on this phone. Internal Wi-Fi injection
+  and RTL8812AU/RTL8822BU adapters are NOT included.
 
 ## Releases
 
-- **v1.0-kernelsu** — `miatoll-ft8756-touchfix-kernelsu.zip` (AnyKernel3) and
-  `boot-kernelsu.img` (stock LineageOS 2026-11-16 boot.img + this kernel).
-  Test first with `fastboot boot boot-kernelsu.img` — never flash untested.
+- **v1.0-kernelsu-droidspaces-crdroid** — `miatoll-kernelsu-droidspaces-crdroid.zip`
+  (AnyKernel3) and `boot-kernelsu-droidspaces-crdroid.img` (stock LineageOS
+  2026-11-16 boot.img + this kernel). Test first with
+  `fastboot boot boot-kernelsu-droidspaces-crdroid.img` — never flash untested.
   Backup Boot in recovery first.
 
 ## Using root
@@ -29,9 +36,10 @@ LineageOS 22.2 kernel (4.14.336, ThinLTO) for the Redmi Note 9 Pro / miatoll
 
 ## Build
 
-GitHub Actions (`.github/workflows/build-kernel.yml`) clones the LineageOS
-kernel (lineage-22.2 branch tip), applies `ft8756-touch-fix.patch`,
-integrates KernelSU-Next via its `setup.sh legacy`, merges
-`ci/kernelsu.config` (`CONFIG_KPROBES` + `CONFIG_KSU`), builds with
-clang-r530567 (AOSP android-16.0.0_r1) + GCC 4.9, repacks a boot.img with
-magiskboot, and auto-publishes the release.
+GitHub Actions (`.github/workflows/build-kernel.yml`) clones the crDroid
+kernel (16.0 branch tip), applies the DroidSpaces patches
+(cgroup prefix + CGROUP_NS Kconfig), integrates KernelSU-Next via its
+`setup.sh legacy`, merges `ci/kernelsu.config` + `ci/droidspaces.config` +
+`ci/nethunter.config`, builds with clang-r530567 (AOSP android-16.0.0_r1)
++ GCC 4.9, repacks a boot.img with magiskboot, and auto-publishes the
+release.

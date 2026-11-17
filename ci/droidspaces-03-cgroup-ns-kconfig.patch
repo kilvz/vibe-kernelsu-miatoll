@@ -1,0 +1,23 @@
+diff --git a/init/Kconfig b/init/Kconfig
+index cefa5d2..aadca37 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -1069,6 +1069,18 @@ config NET_NS
+ 	  Allow user space to create what appear to be multiple instances
+ 	  of the network stack.
+ 
++config CGROUP_NS
++	bool "Cgroup namespace"
++	depends on CGROUPS
++	default y
++	help
++	  Support cgroup namespaces.  This allows having multiple
++	  cgroup hierarchies with different cgroup directories as long
++	  as they are in different cgroup namespaces.  This is a
++	  building block of containers.
++
++	  If unsure, say N.
++
+ endif # NAMESPACES
+ 
+ config SCHED_AUTOGROUP

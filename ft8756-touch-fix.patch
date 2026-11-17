@@ -1,0 +1,63 @@
+--- a/drivers/input/touchscreen/ft8756_spi/focaltech_core.c
++++ b/drivers/input/touchscreen/ft8756_spi/focaltech_core.c
+@@ -1275,6 +1275,21 @@
+ 	fts_ts_resume(ts_data->dev);
+ }
+ 
++/* FT8756 replacement panel boot revive (v5): emulate one screen
++ * off/on cycle ~20 s after probe. The IC does not start scanning
++ * after the boot-time firmware re-flash, but the suspend->resume
++ * path (fts_ex_mode_recovery) revives it, the same as a manual
++ * screen off/on. */
++static void fts_boot_revive_work(struct work_struct *work)
++{
++	struct fts_ts_data *ts_data = container_of(work, struct fts_ts_data,
++						    boot_revive_work.work);
++
++	FTS_INFO("boot revive: emulate suspend->resume");
++	fts_ts_suspend(ts_data->dev);
++	fts_ts_resume(ts_data->dev);
++}
++
+ static int fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
+ {
+ 	int *blank = NULL;
+@@ -1592,6 +1607,16 @@
+ 	register_early_suspend(&ts_data->early_suspend);
+ #endif
+ 
++	/* FT8756 replacement panel boot revive (v5): schedule one
++	 * suspend->resume cycle 20 s after probe, so touch comes up
++	 * without a manual screen off/on. */
++	if (ts_data->ts_workqueue) {
++		INIT_DELAYED_WORK(&ts_data->boot_revive_work, fts_boot_revive_work);
++		queue_delayed_work(ts_data->ts_workqueue,
++				   &ts_data->boot_revive_work,
++				   msecs_to_jiffies(20000));
++	}
++
+ #if LCT_TP_USB_PLUGIN
+ 	g_touchscreen_usb_pulgin.event_callback = fts_ts_usb_event_callback;
+ #endif
+@@ -1664,6 +1689,7 @@
+ 	free_irq(ts_data->irq, ts_data);
+ 	input_unregister_device(ts_data->input_dev);
+ 
++	cancel_delayed_work_sync(&ts_data->boot_revive_work);
+ 	if (ts_data->ts_workqueue)
+ 		destroy_workqueue(ts_data->ts_workqueue);
+ 
+--- a/drivers/input/touchscreen/ft8756_spi/focaltech_core.h
++++ b/drivers/input/touchscreen/ft8756_spi/focaltech_core.h
+@@ -160,6 +160,7 @@
+ 	struct work_struct fwupg_work;
+ 	struct delayed_work esdcheck_work;
+ 	struct delayed_work prc_work;
++	struct delayed_work boot_revive_work;
+ 	struct work_struct resume_work;
+ 	struct ftxxxx_proc proc;
+ 	spinlock_t irq_lock;
+--- a/drivers/input/touchscreen/ft8756_spi/include/firmware/fw_sample.i
++++ b/drivers/input/touchscreen/ft8756_spi/include/firmware/fw_sample.i
+@@ -0,0 +1 @@
++0x00,

@@ -9,15 +9,6 @@ so the Image is larger than the LineageOS ThinLTO builds.
 
 ## What's in it
 
-- **Touch: focaltech_touch driver** — the MIUI touch driver
-  (drivers/input/touchscreen/focaltech_touch/, CONFIG_TOUCHSCREEN_FTS=y)
-  instead of the LineageOS ft8756_spi driver. Three adaptations,
-  all verified to apply cleanly to the crDroid tree: DT compatible
-  "focaltech,fts" -> "focaltech,fts_ts"; Haven include guard fix;
-  drm_panel_notifier ported to msm_drm_notifier.
-  **Honest caveat:** both drivers gate the probe reset on
-  !FTS_CHIP_IDC and both re-flash firmware every boot, so the switch
-  alone may not fix touch. Test by fastboot boot and wait ~30 s.
 - **KernelSU-Next (built in)** — legacy branch for 4.14 non-GKI.
   Install the KernelSU-Next manager APK v3.4.2 on the phone, then
   the meta-overlayfs metamodule before any Magisk-format module.
@@ -37,9 +28,8 @@ so the Image is larger than the LineageOS ThinLTO builds.
 1. **Fastboot boot only**
    (`fastboot boot boot-kernelsu-droidspaces-crdroid.img`), never
    flash untested. Back up Boot in recovery first.
-2. Wait ~30 s, check touch WITHOUT screen off/on.
-3. If it boots and touch works, flash it, then install the
-   KernelSU-Next manager APK v3.4.2 + meta-overlayfs, and the
-   DroidSpaces app.
-4. Report: (1) boots? (2) touch alive without screen off/on?
-   (3) KernelSU root working? (4) DroidSpaces containers run?
+2. Wait ~30 s after boot, check it boots cleanly.
+3. If it boots, flash it, then install the KernelSU-Next manager
+   APK v3.4.2 + meta-overlayfs, and the DroidSpaces app.
+4. Report: (1) boots? (2) KernelSU root working?
+   (3) DroidSpaces containers run?

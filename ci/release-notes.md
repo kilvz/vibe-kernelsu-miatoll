@@ -1,21 +1,41 @@
-Kernel LineageOS 22.2 (Android 15) untuk Redmi Note 9 Pro / miatoll (joyeuse, curtana, excalibur, gram), kernel 4.14.336, ThinLTO, clang 19.0.0 r530567, dengan KernelSU-Next (legacy branch, untuk kernel 4.14 non-GKI) yang dibangun ke dalam kernel.
+# v1.0-kernelsu-droidspaces — focaltech_touch + KernelSU-Next + DroidSpaces
 
-Isi varian ini:
-- Perbaikan sentuh FT8756 (layar pengganti): sentuh tidak perlu lagi dimatikan-dinyalakan tiap boot.
-- Root KernelSU-Next sudah ada di dalam kernel — tidak perlu patch boot.img dengan APatch/Magisk.
-- File boot.img (boot-kernelsu.img) di release ini: boot.img siap flash (stock boot.img + kernel ini), bisa dites dulu dengan `fastboot boot boot-kernelsu.img` tanpa flash.
+LineageOS 22.2 kernel (4.14.336) for Redmi Note 9 Pro (joyeuse / miatoll),
+ThinLTO build, with three things in one image:
 
-Cara pakai root:
-1. Flash zip ini (atau `fastboot boot boot-kernelsu.img` untuk tes).
-2. Install aplikasi manager KernelSU-Next (v3.4.2 release, `KernelSU_Next_v3.4.2_33355-release.apk`) dari https://github.com/KernelSU-Next/KernelSU-Next/releases
-3. Di manager, install dulu metamodule `meta-overlayfs`, baru modul lain (ZygiskNext, PlayIntegrityFork, TrickyStore).
+- **focaltech_touch driver** — the unified FocalTech driver the stock
+  MIUI kernel uses, replacing LineageOS's ft8756_spi. Three LineageOS
+  adaptations were needed to make it compile here: the Haven include
+  is guarded (the hypervisor headers do not exist in this tree),
+  focaltech_core.h was missing an #endif, and the suspend/resume
+  notification was ported from Xiaomi's drm_panel_notifier to
+  Qualcomm's msm_drm_notifier (the mechanism ft8756_spi uses).
+  This is a test of whether the MIUI driver's probe/resume sequence
+  handles the replacement FT8756 panel better. Touch still needs
+  on-device verification: fastboot boot, wait ~30 s, check touch
+  without screen off/on.
+- **KernelSU-Next (legacy branch, kprobe hook)** built into the
+  kernel. Install the KernelSU-Next manager APK (v3.4.2) on the
+  phone, then the meta-overlayfs metamodule before any
+  Magisk-format module (ZygiskNext, PlayIntegrityFork, TrickyStore).
+- **DroidSpaces support** — namespaces, cgroups (incl. CGROUP_NS),
+  overlayfs, netfilter, for running Linux containers. Install the
+  DroidSpaces app
+  (https://github.com/ravindu644/droidspaces-oss/releases/latest),
+  grant root, let it install the backend.
 
-Catatan:
-- BELUM diuji boot di HP — pertama kali flash, cek sentuh langsung tanpa toggle layar.
-- Hook KernelSU yang dipakai: kprobe hook (pilihan pertama untuk 4.14). Kalau bootloop, fallback-nya manual hook.
+## Install
 
-Cara flash (backup Boot dulu):
-1. Backup partisi Boot di recovery.
-2. Flash zip ini.
-3. Reboot, cek sentuh langsung.
-4. Kalau ada masalah, restore backup Boot dari recovery.
+- `boot-kernelsu-droidspaces.img` — fastboot boot first to test,
+  flash only after it boots. **Back up Boot in recovery first.**
+  Flashing removes any APatch patch; re-patch after flashing if
+  you use APatch (this image is KernelSU, not APatch).
+- `miatoll-focaltech-touchfix-kernelsu-droidspaces.zip` — AnyKernel3
+  zip, flashable in recovery (kernel Image only, ramdisk/DTB kept).
+
+## Notes
+
+- The ft8756_spi touch fix (v5/v6 reset pulse) is NOT in this
+  build; it targets the driver this build does not use.
+- CFS_BANDWIDTH is absent (blocked by SCHED_WALT=y); Docker
+  --cpus limits will not work, everything else does.

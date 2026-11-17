@@ -1,31 +1,39 @@
-# Build the miatoll (Redmi Note 9 Pro / joyeuse) kernel with the FT8756
-# touch fix + KernelSU-Next built in, with ThinLTO ON, on GitHub Actions.
+# Build the miatoll (Redmi Note 9 Pro / joyeuse) kernel with the
+# focaltech_touch driver (MIUI unified driver, replaces ft8756_spi) +
+# KernelSU-Next built in + DroidSpaces support, ThinLTO ON, on GitHub
+# Actions. Branch `droidspaces` of vibe-kernelsu-miatoll.
 #
 # Why CI: the ThinLTO final link needs more RAM than the 6 GB build VM
 # (OOM-killed, Error 137). A standard GitHub-hosted runner has 16 GB.
 #
-# Layout: the repo holds ONLY this workflow + the patch + scripts.
-# The workflow clones the LineageOS kernel (lineage-22.2, branch tip),
-# applies the touch-fix patch, integrates KernelSU-Next (legacy branch,
-# for 4.14 non-GKI kernels) via its setup.sh, merges ci/kernelsu.config
-# (CONFIG_KPROBES + CONFIG_KSU), and builds with the same flags as the
-# vibe-kernel-miatoll build (O=out, CC=clang, LD=ld.lld, LLVM_IAS=1).
-# The AnyKernel3 zip is uploaded as a build artifact. The stock
-# miatoll_defconfig already enables CONFIG_LTO_CLANG=y (ThinLTO), so
-# nothing about LTO is touched.
+# Layout: the workflow clones the LineageOS kernel (lineage-22.2,
+# branch tip), applies the focaltech_touch DT patch + the Haven fix +
+# the msm_drm port (the MIUI driver needs three LineageOS adaptations:
+# the Haven include does not exist here, focaltech_core.h is missing
+# an #endif, and the drm_panel_notifier API is replaced by
+# msm_drm_notifier), applies the DroidSpaces patches (cgroup prefix +
+# CGROUP_NS Kconfig), integrates KernelSU-Next (legacy branch, for
+# 4.14 non-GKI kernels) via its setup.sh, merges ci/kernelsu.config
+# + ci/droidspaces.config + ci/focaltech.config, and builds with
+# O=out, CC=clang, LD=ld.lld, LLVM_IAS=1. The AnyKernel3 zip is
+# uploaded as a build artifact. The stock miatoll_defconfig already
+# enables CONFIG_LTO_CLANG=y (ThinLTO), so nothing about LTO is touched.
 #
 # Root: KernelSU-Next is BUILT INTO the kernel (not a boot.img patch
 # like APatch/Magisk). On the phone, install the KernelSU-Next manager
 # APK (v3.4.2 release) to manage root, then the meta-overlayfs
 # metamodule before any Magisk-format module (ZygiskNext, etc.).
-name: Build miatoll kernel (FT8756 touch fix + KernelSU-Next, ThinLTO)
+# DroidSpaces needs the DroidSpaces app
+# (https://github.com/ravindu644/droidspaces-oss/releases/latest)
+# and root; flash this boot image (backup Boot first) or fastboot-boot
+# it every session, because a reboot returns to the old kernel.
+name: Build miatoll kernel (focaltech_touch + KernelSU-Next + DroidSpaces, ThinLTO)
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [droidspaces]
     paths:
-      - 'ft8756-touch-fix.patch'
       - 'ci/**'
 
 jobs:
@@ -54,11 +62,52 @@ jobs:
           cd kernel
           git rev-parse HEAD
 
-      - name: Apply FT8756 touch-fix patch
+      - name: Apply focaltech_touch DT patch + Haven fix + msm_drm port
         run: |
+          # Switch the touch panel DT node to the focaltech_touch
+          # driver ("focaltech,fts" -> "focaltech,fts_ts"). The
+          # ft8756-touch-fix.patch is NOT applied: it targets the
+          # ft8756_spi driver, which this branch does not build.
           cd kernel
-          git apply --check ../ft8756-touch-fix.patch
-          git apply ../ft8756-touch-fix.patch
+          git apply --check ../ci/focaltech-touch-dt.patch
+          git apply ../ci/focaltech-touch-dt.patch
+          # Haven fix: the focaltech_touch driver unconditionally
+          # includes <linux/haven/hh_irq_lend.h>, but the Haven
+          # hypervisor headers do not exist in the LineageOS tree
+          # (no include/linux/haven/ at all). The trusted-touch code
+          # that needs them is already guarded by
+          # CONFIG_FTS_TRUSTED_TOUCH (not set here); only this one
+          # include in focaltech_core.h was unguarded. The same file
+          # is also missing an #endif: the #ifdef at line 189 never
+          # closes, swallowing struct fts_ts_data. This patch guards
+          # the include and adds the missing #endif.
+          git apply --check ../ci/focaltech-touch-haven-fix.patch
+          git apply ../ci/focaltech-touch-haven-fix.patch
+          # msm_drm port: the MIUI driver uses Xiaomi's
+          # drm_panel_notifier API, which does not exist in the
+          # LineageOS kernel. Port the suspend/resume notification
+          # to Qualcomm's msm_drm_notifier (the same mechanism the
+          # ft8756_spi driver uses): fb_notifier_callback,
+          # msm_drm_register_client/unregister_client, and gut the
+          # panel lookup (fts_ts_check_dt) since no panel is needed.
+          git apply --check ../ci/focaltech-touch-msm-drm.patch
+          git apply ../ci/focaltech-touch-msm-drm.patch
+          git status --short | head -20
+
+      - name: Apply DroidSpaces non-GKI patches
+        run: |
+          # Droidspaces-OSS non-GKI patch 02: restore cgroup file prefix
+          # handling (cgroup_add_file gains the subsys-prefixed symlink).
+          # Patch 01 (xt_qtaguid panic fix) is NOT applied: its file
+          # net/netfilter/xt_qtaguid.c does not exist in this tree.
+          # Patch 03 adds the missing CONFIG_CGROUP_NS Kconfig symbol
+          # (needed before Configure, so droidspaces.config's
+          # CONFIG_CGROUP_NS=y is not silently dropped).
+          cd kernel
+          git apply --check ../ci/droidspaces-02-cgroup-prefix.patch
+          git apply ../ci/droidspaces-02-cgroup-prefix.patch
+          git apply --check ../ci/droidspaces-03-cgroup-ns-kconfig.patch
+          git apply ../ci/droidspaces-03-cgroup-ns-kconfig.patch
           git status --short | head -20
 
       - name: Integrate KernelSU-Next (legacy branch, for 4.14)
@@ -94,7 +143,7 @@ jobs:
             gcc
           ls gcc/bin | head
 
-      - name: Configure (stock miatoll_defconfig + KernelSU fragment)
+      - name: Configure (stock miatoll_defconfig + KernelSU + DroidSpaces + focaltech)
         run: |
           cd kernel
           # The defconfig is NOT arch/arm64/configs/miatoll_defconfig
@@ -105,13 +154,24 @@ jobs:
           # KPROBES is OFF in the stock miatoll kernel and is required
           # for the KernelSU kprobe hook path on 4.14.
           ./scripts/kconfig/merge_config.sh -m -O out out/.config ../ci/kernelsu.config
+          # Merge the DroidSpaces fragment (namespaces, cgroups,
+          # overlayfs, netfilter) and the focaltech_touch fragment
+          # (CONFIG_TOUCHSCREEN_FTS=y, FTS_DIRECTORY="focaltech_touch").
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config ../ci/droidspaces.config ../ci/focaltech.config
           make O=out ARCH=arm64 olddefconfig
-          grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS_SPI=|CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KRETPROBES=|CONFIG_KSU_KPROBES_HOOK=|CONFIG_KSU_MANUAL_HOOK=' out/.config
+          grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS=|CONFIG_TOUCHSCREEN_FTS_SPI|CONFIG_TOUCHSCREEN_FTS_DIRECTORY=|CONFIG_CGROUP_NS=|CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KRETPROBES=|CONFIG_KSU_KPROBES_HOOK=|CONFIG_KSU_MANUAL_HOOK=' out/.config
           # Fail fast if the kprobe hook did not stick: without it the
           # build dies 13 min later at link time with "No hooks were
           # defined". (The grep above passes if ANY pattern matches, so
           # it cannot catch a missing hook on its own.)
           grep -q 'CONFIG_KSU_KPROBES_HOOK=y' out/.config || { echo 'ERROR: CONFIG_KSU_KPROBES_HOOK=y missing from out/.config'; exit 1; }
+          # Fail fast if the focaltech_touch driver did not stick:
+          # FTS=y must be set and FTS_SPI must NOT be =y (its symbol
+          # vanishes from .config once FTS=y, so check the negative).
+          grep -q 'CONFIG_TOUCHSCREEN_FTS=y' out/.config || { echo 'ERROR: CONFIG_TOUCHSCREEN_FTS=y missing from out/.config'; exit 1; }
+          ! grep -q 'CONFIG_TOUCHSCREEN_FTS_SPI=y' out/.config || { echo 'ERROR: CONFIG_TOUCHSCREEN_FTS_SPI=y still set'; exit 1; }
+          # Fail fast if DroidSpaces namespaces did not stick.
+          grep -q 'CONFIG_CGROUP_NS=y' out/.config || { echo 'ERROR: CONFIG_CGROUP_NS=y missing from out/.config'; exit 1; }
 
       - name: Build kernel (ThinLTO ON)
         run: |
@@ -147,11 +207,11 @@ jobs:
           chmod +x magiskboot
           ./magiskboot unpack stock-boot.img > magiskboot-unpack.log 2>&1
           cp ../kernel/out/arch/arm64/boot/Image kernel
-          ./magiskboot repack stock-boot.img boot-kernelsu.img > magiskboot-repack.log 2>&1
-          mv boot-kernelsu.img ..
+          ./magiskboot repack stock-boot.img boot-kernelsu-droidspaces.img > magiskboot-repack.log 2>&1
+          mv boot-kernelsu-droidspaces.img ..
           cd ..
-          ls -l boot-kernelsu.img
-          md5sum boot-kernelsu.img
+          ls -l boot-kernelsu-droidspaces.img
+          md5sum boot-kernelsu-droidspaces.img
 
       - name: Package AnyKernel3 zip
         run: |
@@ -159,23 +219,23 @@ jobs:
           cp kernel/out/arch/arm64/boot/Image ak3/Image
           cp ci/anykernel.sh ak3/anykernel.sh
           cd ak3
-          zip -r9 ../miatoll-ft8756-touchfix-kernelsu.zip * -x .git/\*
+          zip -r9 ../miatoll-focaltech-touchfix-kernelsu-droidspaces.zip * -x .git/\*
           cd ..
-          md5sum miatoll-ft8756-touchfix-kernelsu.zip
-          ls -l miatoll-ft8756-touchfix-kernelsu.zip
+          md5sum miatoll-focaltech-touchfix-kernelsu-droidspaces.zip
+          ls -l miatoll-focaltech-touchfix-kernelsu-droidspaces.zip
 
       - name: Upload AnyKernel3 zip
         uses: actions/upload-artifact@v4
         with:
-          name: miatoll-ft8756-touchfix-kernelsu
-          path: miatoll-ft8756-touchfix-kernelsu.zip
+          name: miatoll-focaltech-touchfix-kernelsu-droidspaces
+          path: miatoll-focaltech-touchfix-kernelsu-droidspaces.zip
           if-no-files-found: error
 
       - name: Upload boot.img
         uses: actions/upload-artifact@v4
         with:
-          name: boot-kernelsu
-          path: boot-kernelsu.img
+          name: boot-kernelsu-droidspaces
+          path: boot-kernelsu-droidspaces.img
           if-no-files-found: error
 
       - name: Upload build log
@@ -190,10 +250,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.0-kernelsu"
-          TITLE="v1.0-kernelsu — FT8756 touch fix + KernelSU-Next, ThinLTO"
-          ZIP="miatoll-ft8756-touchfix-kernelsu.zip"
-          IMG="boot-kernelsu.img"
+          TAG="v1.0-kernelsu-droidspaces"
+          TITLE="v1.0-kernelsu-droidspaces — focaltech_touch + KernelSU-Next + DroidSpaces, ThinLTO"
+          ZIP="miatoll-focaltech-touchfix-kernelsu-droidspaces.zip"
+          IMG="boot-kernelsu-droidspaces.img"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ZIP" "$IMG" --clobber
           else

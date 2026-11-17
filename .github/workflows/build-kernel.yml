@@ -107,6 +107,11 @@ jobs:
           ./scripts/kconfig/merge_config.sh -m -O out out/.config ../ci/kernelsu.config
           make O=out ARCH=arm64 olddefconfig
           grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS_SPI=|CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KRETPROBES=|CONFIG_KSU_KPROBES_HOOK=|CONFIG_KSU_MANUAL_HOOK=' out/.config
+          # Fail fast if the kprobe hook did not stick: without it the
+          # build dies 13 min later at link time with "No hooks were
+          # defined". (The grep above passes if ANY pattern matches, so
+          # it cannot catch a missing hook on its own.)
+          grep -q 'CONFIG_KSU_KPROBES_HOOK=y' out/.config || { echo 'ERROR: CONFIG_KSU_KPROBES_HOOK=y missing from out/.config'; exit 1; }
 
       - name: Build kernel (ThinLTO ON)
         run: |

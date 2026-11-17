@@ -1,19 +1,17 @@
 # vibe-kernelsu-miatoll
 
 LineageOS 22.2 kernel (4.14.336, ThinLTO) for the Redmi Note 9 Pro / miatoll
-(joyeuse, curtana, excalibur, gram) with:
+(joyeuse, curtana, excalibur, gram) with **KernelSU-Next built in** — root
+lives in the kernel itself (legacy branch, for 4.14 non-GKI kernels). No
+boot.img patching with APatch or Magisk needed.
 
-- **FT8756 touch fix** — the replacement-screen touch fix (touch no longer
-  needs a screen off/on toggle after every boot). Same patch as
-  [vibe-kernel-miatoll](https://github.com/kilvz/vibe-kernel-miatoll)
-  (touch fix v5: delayed suspend→resume 20 s after probe).
-- **KernelSU-Next built in** — root lives in the kernel itself (legacy
-  branch, for 4.14 non-GKI kernels). No boot.img patching with APatch or
-  Magisk needed.
+This repo's focus is a **NetHunter kernel with DroidSpaces support** —
+see the `droidspaces` branch (LineageOS base) and `droidspaces-crdroid`
+branch (crDroid base). This `main` branch is the plain KernelSU variant.
 
 ## Releases
 
-- **v1.0-kernelsu** — `miatoll-ft8756-touchfix-kernelsu.zip` (AnyKernel3) and
+- **v1.0-kernelsu** — `miatoll-kernelsu.zip` (AnyKernel3) and
   `boot-kernelsu.img` (stock LineageOS 2026-11-16 boot.img + this kernel).
   Test first with `fastboot boot boot-kernelsu.img` — never flash untested.
   Backup Boot in recovery first.
@@ -30,8 +28,7 @@ LineageOS 22.2 kernel (4.14.336, ThinLTO) for the Redmi Note 9 Pro / miatoll
 ## Build
 
 GitHub Actions (`.github/workflows/build-kernel.yml`) clones the LineageOS
-kernel (lineage-22.2 branch tip), applies `ft8756-touch-fix.patch`,
-integrates KernelSU-Next via its `setup.sh legacy`, merges
-`ci/kernelsu.config` (`CONFIG_KPROBES` + `CONFIG_KSU`), builds with
-clang-r530567 (AOSP android-16.0.0_r1) + GCC 4.9, repacks a boot.img with
-magiskboot, and auto-publishes the release.
+kernel (lineage-22.2 branch tip), integrates KernelSU-Next via its
+`setup.sh legacy`, merges `ci/kernelsu.config` (`CONFIG_KPROBES` +
+`CONFIG_KSU`), builds with clang-r530567 (AOSP android-16.0.0_r1) + GCC
+4.9, repacks a boot.img with magiskboot, and auto-publishes the release.

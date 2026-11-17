@@ -39,3 +39,10 @@ ThinLTO build, with three things in one image:
   build; it targets the driver this build does not use.
 - CFS_BANDWIDTH is absent (blocked by SCHED_WALT=y); Docker
   --cpus limits will not work, everything else does.
+
+- **NetHunter (defconfig-only)** — HID/BadUSB, RNDIS, mac80211 +
+  in-tree USB Wi-Fi drivers (rtl8xxxu, ath9k_htc, rt2800usb,
+  rtl8187), Bluetooth Arsenal, CAN, RTL-SDR, USB serial. No source
+  patches are applied: the source-patched NetHunter builds do not
+  boot on this phone. Internal Wi-Fi injection and RTL8812AU /
+  RTL8822BU adapters are NOT included (they need source patches).

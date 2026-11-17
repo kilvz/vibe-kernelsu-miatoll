@@ -1,0 +1,141 @@
+diff --git a/drivers/input/touchscreen/focaltech_touch/focaltech_core.c b/drivers/input/touchscreen/focaltech_touch/focaltech_core.c
+index 2b1497e..1e75eaa 100644
+--- a/drivers/input/touchscreen/focaltech_touch/focaltech_core.c
++++ b/drivers/input/touchscreen/focaltech_touch/focaltech_core.c
+@@ -41,7 +41,7 @@
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
+ #include <linux/of_irq.h>
+ #if defined(CONFIG_DRM)
+-#include <drm/drm_panel.h>
++#include <linux/msm_drm_notify.h>
+ #elif defined(CONFIG_FB)
+ #include <linux/notifier.h>
+ #include <linux/fb.h>
+@@ -86,9 +86,6 @@
+ *****************************************************************************/
+ struct fts_ts_data *fts_data;
+ 
+-#if defined(CONFIG_DRM)
+-static struct drm_panel *active_panel;
+-#endif
+ 
+ /*****************************************************************************
+ * Static function prototypes
+@@ -2457,40 +2454,36 @@ static void fts_suspend_work(struct work_struct *work)
+ static int fb_notifier_callback(struct notifier_block *self,
+ 				unsigned long event, void *data)
+ {
+-	struct drm_panel_notifier *evdata = data;
+ 	int *blank = NULL;
++	struct msm_drm_notifier *evdata = data;
++	struct fts_ts_data *ts_data = container_of(self, struct fts_ts_data,
++						   fb_notif);
+ 
+-	if (!evdata)
+-		return 0;
+-
+-	if (!(event == DRM_PANEL_EARLY_EVENT_BLANK ||
+-		event == DRM_PANEL_EVENT_BLANK)) {
++	if (!(event == MSM_DRM_EARLY_EVENT_BLANK || event == MSM_DRM_EVENT_BLANK)) {
+ 		FTS_INFO("event(%lu) do not need process\n", event);
+ 		return 0;
+ 	}
+ 
+ 	blank = evdata->data;
+-	FTS_DEBUG("FB event:%lu,blank:%d", event, *blank);
++	FTS_INFO("FB event:%lu,blank:%d", event, *blank);
+ 	switch (*blank) {
+-	case DRM_PANEL_BLANK_UNBLANK:
+-		if (event == DRM_PANEL_EARLY_EVENT_BLANK) {
+-			FTS_DEBUG("resume: event = %lu, not care\n", event);
+-		} else if (event == DRM_PANEL_EVENT_BLANK) {
+-			queue_work(fts_data->ts_workqueue, &fts_data->resume_work);
++	case MSM_DRM_BLANK_UNBLANK:
++		if (MSM_DRM_EARLY_EVENT_BLANK == event) {
++			FTS_INFO("resume: event = %lu, not care\n", event);
++		} else if (MSM_DRM_EVENT_BLANK == event) {
++			queue_work(ts_data->ts_workqueue, &ts_data->resume_work);
+ 		}
+ 		break;
+-
+-	case DRM_PANEL_BLANK_POWERDOWN:
+-		if (event == DRM_PANEL_EARLY_EVENT_BLANK) {
+-			queue_work(fts_data->ts_workqueue,
+-					&fts_data->suspend_work);
+-		} else if (event == DRM_PANEL_EVENT_BLANK) {
+-			FTS_DEBUG("suspend: event = %lu, not care\n", event);
++	case MSM_DRM_BLANK_POWERDOWN:
++		if (MSM_DRM_EARLY_EVENT_BLANK == event) {
++			cancel_work_sync(&ts_data->resume_work);
++			fts_ts_suspend(ts_data->dev);
++		} else if (MSM_DRM_EVENT_BLANK == event) {
++			FTS_INFO("suspend: event = %lu, not care\n", event);
+ 		}
+ 		break;
+-
+ 	default:
+-		FTS_DEBUG("FB BLANK(%d) do not need process\n", *blank);
++		FTS_INFO("FB BLANK(%d) do not need process\n", *blank);
+ 		break;
+ 	}
+ 
+@@ -2748,11 +2741,10 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
+ 		INIT_WORK(&ts_data->suspend_work, fts_suspend_work);
+ 	}
+ 	ts_data->fb_notif.notifier_call = fb_notifier_callback;
+-
+-	if (active_panel &&
+-		drm_panel_notifier_register(active_panel,
+-			&ts_data->fb_notif) < 0)
+-		FTS_ERROR("register notifier failed!\n");
++	ret = msm_drm_register_client(&ts_data->fb_notif);
++	if (ret) {
++		FTS_ERROR("[FB]Unable to register fb_notifier: %d", ret);
++	}
+ 
+ #elif defined(CONFIG_FB)
+ 	if (ts_data->ts_workqueue) {
+@@ -2820,8 +2812,8 @@ static int fts_ts_remove_entry(struct fts_ts_data *ts_data)
+ 		destroy_workqueue(ts_data->ts_workqueue);
+ 
+ #if defined(CONFIG_DRM)
+-	if (active_panel)
+-		drm_panel_notifier_unregister(active_panel, &ts_data->fb_notif);
++	if (msm_drm_unregister_client(&ts_data->fb_notif))
++		FTS_ERROR("Error occurred while unregistering fb_notifier.");
+ 
+ #elif defined(CONFIG_FB)
+ 	if (fb_unregister_client(&ts_data->fb_notif))
+@@ -2944,26 +2936,12 @@ static int fts_ts_resume(struct device *dev)
+ *****************************************************************************/
+ static int fts_ts_check_dt(struct device_node *np)
+ {
+-	int i;
+-	int count;
+-	struct device_node *node;
+-	struct drm_panel *panel;
+-
+-	count = of_count_phandle_with_args(np, "panel", NULL);
+-	if (count <= 0)
+-		return 0;
+-
+-	for (i = 0; i < count; i++) {
+-		node = of_parse_phandle(np, "panel", i);
+-		panel = of_drm_find_panel(node);
+-		of_node_put(node);
+-		if (!IS_ERR(panel)) {
+-			active_panel = panel;
+-			return 0;
+-		}
+-	}
+-
+-	return -ENODEV;
++	/* The MIUI driver used this to find the DRM panel for
++	 * drm_panel_notifier. LineageOS has no drm_panel_notifier;
++	 * the driver now uses msm_drm_notifier, which needs no panel,
++	 * so there is nothing to check here. */
++	(void)np;
++	return 0;
+ }
+ 
+ static int fts_ts_check_default_tp(struct device_node *dt, const char *prop)

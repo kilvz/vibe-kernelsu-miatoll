@@ -1,23 +1,30 @@
-# Build the miatoll (Redmi Note 9 Pro / joyeuse) kernel with the
-# focaltech_touch driver (MIUI unified driver, replaces ft8756_spi) +
-# KernelSU-Next built in + DroidSpaces support, ThinLTO ON, on GitHub
-# Actions. Branch `droidspaces` of vibe-kernelsu-miatoll.
+# Build the miatoll (Redmi Note 9 Pro / joyeuse) kernel on the
+# crDroid base (r3n3o's tested KernelSU-Next builder), with the
+# focaltech_touch driver + KernelSU-Next built in + DroidSpaces
+# support + NetHunter (defconfig-only), on GitHub Actions.
+# Branch `droidspaces-crdroid` of vibe-kernelsu-miatoll.
 #
-# Why CI: the ThinLTO final link needs more RAM than the 6 GB build VM
-# (OOM-killed, Error 137). A standard GitHub-hosted runner has 16 GB.
+# BASE: crDroid android_kernel_xiaomi_sm6250, branch 16.0
+# (4.14.357), the same base r3n3o's joyeuse-tested kernel uses.
+# crDroid's miatoll_defconfig has ThinLTO OFF (CONFIG_LTO_NONE=y),
+# so this build is NOT ThinLTO -- the link is a normal link and the
+# Image is larger than the LineageOS ThinLTO builds. That is fine.
 #
-# Layout: the workflow clones the LineageOS kernel (lineage-22.2,
-# branch tip), applies the focaltech_touch DT patch + the Haven fix +
-# the msm_drm port (the MIUI driver needs three LineageOS adaptations:
-# the Haven include does not exist here, focaltech_core.h is missing
-# an #endif, and the drm_panel_notifier API is replaced by
-# msm_drm_notifier), applies the DroidSpaces patches (cgroup prefix +
-# CGROUP_NS Kconfig), integrates KernelSU-Next (legacy branch, for
-# 4.14 non-GKI kernels) via its setup.sh, merges ci/kernelsu.config
-# + ci/droidspaces.config + ci/focaltech.config, and builds with
-# O=out, CC=clang, LD=ld.lld, LLVM_IAS=1. The AnyKernel3 zip is
-# uploaded as a build artifact. The stock miatoll_defconfig already
-# enables CONFIG_LTO_CLANG=y (ThinLTO), so nothing about LTO is touched.
+# Layout: the workflow clones the crDroid kernel (16.0 branch tip),
+# applies the focaltech_touch DT patch + the Haven fix + the msm_drm
+# port (the MIUI driver needs three adaptations, same as on the
+# LineageOS tree: the Haven include does not exist here,
+# focaltech_core.h is missing an #endif, and the drm_panel_notifier
+# API is replaced by msm_drm_notifier -- all three patches were
+# verified to apply cleanly to the crDroid tree), applies the
+# DroidSpaces patches (cgroup prefix + CGROUP_NS Kconfig), integrates
+# KernelSU-Next (legacy branch, for 4.14 non-GKI kernels) via its
+# setup.sh, merges ci/kernelsu.config + ci/droidspaces.config +
+# ci/focaltech.config + ci/nethunter.config, and builds with O=out,
+# CC=clang, LD=ld.lld, LLVM_IAS=1. The AnyKernel3 zip is uploaded
+# as a build artifact. The boot.img is repacked from the stock
+# LineageOS 2026-11-16 boot.img (the ROM Kilv runs), with only the
+# kernel swapped.
 #
 # Root: KernelSU-Next is BUILT INTO the kernel (not a boot.img patch
 # like APatch/Magisk). On the phone, install the KernelSU-Next manager
@@ -27,12 +34,12 @@
 # (https://github.com/ravindu644/droidspaces-oss/releases/latest)
 # and root; flash this boot image (backup Boot first) or fastboot-boot
 # it every session, because a reboot returns to the old kernel.
-name: Build miatoll kernel (focaltech_touch + KernelSU-Next + DroidSpaces + NetHunter, ThinLTO)
+name: Build miatoll kernel (crDroid base + focaltech_touch + KernelSU-Next + DroidSpaces + NetHunter)
 
 on:
   workflow_dispatch:
   push:
-    branches: [droidspaces]
+    branches: [droidspaces-crdroid]
     paths:
       - 'ci/**'
 
@@ -55,10 +62,16 @@ jobs:
           sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
             cpio device-tree-compiler lz4 git make python3
 
-      - name: Clone LineageOS kernel (lineage-22.2, branch tip)
+      - name: Clone crDroid kernel (16.0 branch tip)
         run: |
-          git clone --branch lineage-22.2 --single-branch \
-            https://github.com/LineageOS/android_kernel_xiaomi_sm6250.git kernel
+          # crDroid android_kernel_xiaomi_sm6250, branch 16.0
+          # (4.14.357) -- the same base r3n3o's joyeuse-tested
+          # KernelSU-Next kernel uses (their README lists
+          # LineageOS 22.2 as fully supported). The focaltech_touch
+          # and DroidSpaces patches were verified to apply cleanly
+          # to this tree before this branch was created.
+          git clone --branch 16.0 --single-branch --depth 1 \
+            https://github.com/crdroidandroid/android_kernel_xiaomi_sm6250.git kernel
           cd kernel
           git rev-parse HEAD
 
@@ -143,7 +156,7 @@ jobs:
             gcc
           ls gcc/bin | head
 
-      - name: Configure (stock miatoll_defconfig + KernelSU + DroidSpaces + focaltech + NetHunter)
+      - name: Configure (crDroid miatoll_defconfig + KernelSU + DroidSpaces + focaltech + NetHunter)
         run: |
           cd kernel
           # The defconfig is NOT arch/arm64/configs/miatoll_defconfig
@@ -160,6 +173,8 @@ jobs:
           ./scripts/kconfig/merge_config.sh -m -O out out/.config ../ci/droidspaces.config ../ci/focaltech.config ../ci/nethunter.config
           make O=out ARCH=arm64 olddefconfig
           grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS=|CONFIG_TOUCHSCREEN_FTS_SPI|CONFIG_TOUCHSCREEN_FTS_DIRECTORY=|CONFIG_CGROUP_NS=|CONFIG_MAC80211=|CONFIG_HID=|CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KRETPROBES=|CONFIG_KSU_KPROBES_HOOK=|CONFIG_KSU_MANUAL_HOOK=' out/.config
+          # NOTE: crDroid's defconfig has ThinLTO OFF (CONFIG_LTO_NONE=y),
+          # so CONFIG_LTO will show as not set -- that is expected here.
           # Fail fast if the kprobe hook did not stick: without it the
           # build dies 13 min later at link time with "No hooks were
           # defined". (The grep above passes if ANY pattern matches, so
@@ -176,7 +191,7 @@ jobs:
           grep -q 'CONFIG_MAC80211=y' out/.config || { echo 'ERROR: CONFIG_MAC80211=y missing from out/.config'; exit 1; }
           grep -q 'CONFIG_HID=y' out/.config || { echo 'ERROR: CONFIG_HID=y missing from out/.config'; exit 1; }
 
-      - name: Build kernel (ThinLTO ON)
+      - name: Build kernel
         run: |
           cd kernel
           export ARCH=arm64
@@ -210,11 +225,11 @@ jobs:
           chmod +x magiskboot
           ./magiskboot unpack stock-boot.img > magiskboot-unpack.log 2>&1
           cp ../kernel/out/arch/arm64/boot/Image kernel
-          ./magiskboot repack stock-boot.img boot-kernelsu-droidspaces.img > magiskboot-repack.log 2>&1
-          mv boot-kernelsu-droidspaces.img ..
+          ./magiskboot repack stock-boot.img boot-kernelsu-droidspaces-crdroid.img > magiskboot-repack.log 2>&1
+          mv boot-kernelsu-droidspaces-crdroid.img ..
           cd ..
-          ls -l boot-kernelsu-droidspaces.img
-          md5sum boot-kernelsu-droidspaces.img
+          ls -l boot-kernelsu-droidspaces-crdroid.img
+          md5sum boot-kernelsu-droidspaces-crdroid.img
 
       - name: Package AnyKernel3 zip
         run: |
@@ -222,23 +237,23 @@ jobs:
           cp kernel/out/arch/arm64/boot/Image ak3/Image
           cp ci/anykernel.sh ak3/anykernel.sh
           cd ak3
-          zip -r9 ../miatoll-focaltech-touchfix-kernelsu-droidspaces.zip * -x .git/\*
+          zip -r9 ../miatoll-focaltech-touchfix-kernelsu-droidspaces-crdroid.zip * -x .git/\*
           cd ..
-          md5sum miatoll-focaltech-touchfix-kernelsu-droidspaces.zip
-          ls -l miatoll-focaltech-touchfix-kernelsu-droidspaces.zip
+          md5sum miatoll-focaltech-touchfix-kernelsu-droidspaces-crdroid.zip
+          ls -l miatoll-focaltech-touchfix-kernelsu-droidspaces-crdroid.zip
 
       - name: Upload AnyKernel3 zip
         uses: actions/upload-artifact@v4
         with:
-          name: miatoll-focaltech-touchfix-kernelsu-droidspaces
-          path: miatoll-focaltech-touchfix-kernelsu-droidspaces.zip
+          name: miatoll-focaltech-touchfix-kernelsu-droidspaces-crdroid
+          path: miatoll-focaltech-touchfix-kernelsu-droidspaces-crdroid.zip
           if-no-files-found: error
 
       - name: Upload boot.img
         uses: actions/upload-artifact@v4
         with:
-          name: boot-kernelsu-droidspaces
-          path: boot-kernelsu-droidspaces.img
+          name: boot-kernelsu-droidspaces-crdroid
+          path: boot-kernelsu-droidspaces-crdroid.img
           if-no-files-found: error
 
       - name: Upload build log
@@ -253,10 +268,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.0-kernelsu-droidspaces"
-          TITLE="v1.0-kernelsu-droidspaces — focaltech_touch + KernelSU-Next + DroidSpaces + NetHunter (defconfig-only), ThinLTO"
-          ZIP="miatoll-focaltech-touchfix-kernelsu-droidspaces.zip"
-          IMG="boot-kernelsu-droidspaces.img"
+          TAG="v1.0-kernelsu-droidspaces-crdroid"
+          TITLE="v1.0-kernelsu-droidspaces-crdroid — crDroid base + focaltech_touch + KernelSU-Next + DroidSpaces + NetHunter (defconfig-only)"
+          ZIP="miatoll-focaltech-touchfix-kernelsu-droidspaces-crdroid.zip"
+          IMG="boot-kernelsu-droidspaces-crdroid.img"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ZIP" "$IMG" --clobber
           else

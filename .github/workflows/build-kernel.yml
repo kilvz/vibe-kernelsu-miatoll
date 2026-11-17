@@ -11,6 +11,7 @@
 # Image is larger than the LineageOS ThinLTO builds. That is fine.
 #
 # Layout: the workflow clones the crDroid kernel (16.0 branch tip),
+# applies the netprio cgroup_id fix (CAF tree has no cgroup->id),
 # applies the DroidSpaces patches (cgroup prefix + CGROUP_NS Kconfig),
 # integrates KernelSU-Next (legacy branch, for 4.14 non-GKI kernels)
 # via its setup.sh, merges ci/kernelsu.config + ci/droidspaces.config
@@ -67,6 +68,18 @@ jobs:
             https://github.com/crdroidandroid/android_kernel_xiaomi_sm6250.git kernel
           cd kernel
           git rev-parse HEAD
+
+      - name: Apply cgroup netprio id fix (CAF tree has no cgroup->id)
+        run: |
+          # The CAF tree removed struct cgroup->id (it uses cgroup_id(),
+          # the kernfs node id, instead -- the same change mainline made
+          # in 4.15). But include/net/netprio_cgroup.h still uses the
+          # old css->cgroup->id, so CONFIG_CGROUP_NET_PRIO=y fails to
+          # compile. This one-line patch switches netprio to cgroup_id().
+          cd kernel
+          git apply --check ../ci/cgroup-netprio-id.patch
+          git apply ../ci/cgroup-netprio-id.patch
+          git status --short | head -20
 
       - name: Apply DroidSpaces non-GKI patches
         run: |

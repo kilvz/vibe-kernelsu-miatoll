@@ -6,7 +6,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=FT8756 touch-fix kernel for miatoll (LineageOS 22.2, 4.14.336-g803b55865869, ThinLTO build)
+kernel.string=KernelSU-Next kernel for miatoll (LineageOS 22.2, 4.14.336, ThinLTO build)
 do.devicecheck=1
 do.modules=0
 do.systemless=1

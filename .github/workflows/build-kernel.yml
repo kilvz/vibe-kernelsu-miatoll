@@ -106,7 +106,7 @@ jobs:
           # for the KernelSU kprobe hook path on 4.14.
           ./scripts/kconfig/merge_config.sh -m -O out out/.config ../ci/kernelsu.config
           make O=out ARCH=arm64 olddefconfig
-          grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS_SPI=|CONFIG_KSU=|CONFIG_KPROBES=' out/.config
+          grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS_SPI=|CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KRETPROBES=|CONFIG_KSU_KPROBES_HOOK=|CONFIG_KSU_MANUAL_HOOK=' out/.config
 
       - name: Build kernel (ThinLTO ON)
         run: |

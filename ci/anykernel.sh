@@ -6,7 +6,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=focaltech_touch + KernelSU-Next + DroidSpaces kernel for miatoll (LineageOS 22.2, 4.14.336, ThinLTO build)
+kernel.string=focaltech_touch + KernelSU-Next + DroidSpaces + NetHunter kernel for miatoll (crDroid 16.0 base, 4.14.357, no LTO)
 do.devicecheck=1
 do.modules=0
 do.systemless=1

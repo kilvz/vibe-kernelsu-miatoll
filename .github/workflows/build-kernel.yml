@@ -27,7 +27,7 @@
 # (https://github.com/ravindu644/droidspaces-oss/releases/latest)
 # and root; flash this boot image (backup Boot first) or fastboot-boot
 # it every session, because a reboot returns to the old kernel.
-name: Build miatoll kernel (focaltech_touch + KernelSU-Next + DroidSpaces, ThinLTO)
+name: Build miatoll kernel (focaltech_touch + KernelSU-Next + DroidSpaces + NetHunter, ThinLTO)
 
 on:
   workflow_dispatch:
@@ -143,7 +143,7 @@ jobs:
             gcc
           ls gcc/bin | head
 
-      - name: Configure (stock miatoll_defconfig + KernelSU + DroidSpaces + focaltech)
+      - name: Configure (stock miatoll_defconfig + KernelSU + DroidSpaces + focaltech + NetHunter)
         run: |
           cd kernel
           # The defconfig is NOT arch/arm64/configs/miatoll_defconfig
@@ -157,9 +157,9 @@ jobs:
           # Merge the DroidSpaces fragment (namespaces, cgroups,
           # overlayfs, netfilter) and the focaltech_touch fragment
           # (CONFIG_TOUCHSCREEN_FTS=y, FTS_DIRECTORY="focaltech_touch").
-          ./scripts/kconfig/merge_config.sh -m -O out out/.config ../ci/droidspaces.config ../ci/focaltech.config
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config ../ci/droidspaces.config ../ci/focaltech.config ../ci/nethunter.config
           make O=out ARCH=arm64 olddefconfig
-          grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS=|CONFIG_TOUCHSCREEN_FTS_SPI|CONFIG_TOUCHSCREEN_FTS_DIRECTORY=|CONFIG_CGROUP_NS=|CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KRETPROBES=|CONFIG_KSU_KPROBES_HOOK=|CONFIG_KSU_MANUAL_HOOK=' out/.config
+          grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS=|CONFIG_TOUCHSCREEN_FTS_SPI|CONFIG_TOUCHSCREEN_FTS_DIRECTORY=|CONFIG_CGROUP_NS=|CONFIG_MAC80211=|CONFIG_HID=|CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KRETPROBES=|CONFIG_KSU_KPROBES_HOOK=|CONFIG_KSU_MANUAL_HOOK=' out/.config
           # Fail fast if the kprobe hook did not stick: without it the
           # build dies 13 min later at link time with "No hooks were
           # defined". (The grep above passes if ANY pattern matches, so
@@ -172,6 +172,9 @@ jobs:
           ! grep -q 'CONFIG_TOUCHSCREEN_FTS_SPI=y' out/.config || { echo 'ERROR: CONFIG_TOUCHSCREEN_FTS_SPI=y still set'; exit 1; }
           # Fail fast if DroidSpaces namespaces did not stick.
           grep -q 'CONFIG_CGROUP_NS=y' out/.config || { echo 'ERROR: CONFIG_CGROUP_NS=y missing from out/.config'; exit 1; }
+          # Fail fast if the NetHunter options did not stick.
+          grep -q 'CONFIG_MAC80211=y' out/.config || { echo 'ERROR: CONFIG_MAC80211=y missing from out/.config'; exit 1; }
+          grep -q 'CONFIG_HID=y' out/.config || { echo 'ERROR: CONFIG_HID=y missing from out/.config'; exit 1; }
 
       - name: Build kernel (ThinLTO ON)
         run: |
@@ -251,7 +254,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v1.0-kernelsu-droidspaces"
-          TITLE="v1.0-kernelsu-droidspaces — focaltech_touch + KernelSU-Next + DroidSpaces, ThinLTO"
+          TITLE="v1.0-kernelsu-droidspaces — focaltech_touch + KernelSU-Next + DroidSpaces + NetHunter (defconfig-only), ThinLTO"
           ZIP="miatoll-focaltech-touchfix-kernelsu-droidspaces.zip"
           IMG="boot-kernelsu-droidspaces.img"
           if gh release view "$TAG" >/dev/null 2>&1; then

@@ -6,7 +6,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=focaltech_touch + KernelSU-Next + DroidSpaces + NetHunter kernel for miatoll (crDroid 16.0 base, 4.14.357, no LTO)
+kernel.string=KernelSU-Next + DroidSpaces + NetHunter kernel for miatoll (crDroid 16.0 base, 4.14.357, no LTO)
 do.devicecheck=1
 do.modules=0
 do.systemless=1

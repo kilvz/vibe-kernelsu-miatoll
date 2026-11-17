@@ -1,0 +1,196 @@
+# Build the miatoll (Redmi Note 9 Pro / joyeuse) kernel with the FT8756
+# touch fix + KernelSU-Next built in, with ThinLTO ON, on GitHub Actions.
+#
+# Why CI: the ThinLTO final link needs more RAM than the 6 GB build VM
+# (OOM-killed, Error 137). A standard GitHub-hosted runner has 16 GB.
+#
+# Layout: the repo holds ONLY this workflow + the patch + scripts.
+# The workflow clones the LineageOS kernel (lineage-22.2, branch tip),
+# applies the touch-fix patch, integrates KernelSU-Next (legacy branch,
+# for 4.14 non-GKI kernels) via its setup.sh, merges ci/kernelsu.config
+# (CONFIG_KPROBES + CONFIG_KSU), and builds with the same flags as the
+# vibe-kernel-miatoll build (O=out, CC=clang, LD=ld.lld, LLVM_IAS=1).
+# The AnyKernel3 zip is uploaded as a build artifact. The stock
+# miatoll_defconfig already enables CONFIG_LTO_CLANG=y (ThinLTO), so
+# nothing about LTO is touched.
+#
+# Root: KernelSU-Next is BUILT INTO the kernel (not a boot.img patch
+# like APatch/Magisk). On the phone, install the KernelSU-Next manager
+# APK (v3.4.2 release) to manage root, then the meta-overlayfs
+# metamodule before any Magisk-format module (ZygiskNext, etc.).
+name: Build miatoll kernel (FT8756 touch fix + KernelSU-Next, ThinLTO)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'ft8756-touch-fix.patch'
+      - 'ci/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout this repo (patch + scripts)
+        uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
+            cpio device-tree-compiler lz4 git make python3
+
+      - name: Clone LineageOS kernel (lineage-22.2, branch tip)
+        run: |
+          git clone --branch lineage-22.2 --single-branch \
+            https://github.com/LineageOS/android_kernel_xiaomi_sm6250.git kernel
+          cd kernel
+          git rev-parse HEAD
+
+      - name: Apply FT8756 touch-fix patch
+        run: |
+          cd kernel
+          git apply --check ../ft8756-touch-fix.patch
+          git apply ../ft8756-touch-fix.patch
+          git status --short | head -20
+
+      - name: Integrate KernelSU-Next (legacy branch, for 4.14)
+        run: |
+          # KernelSU-Next legacy driver, built into the kernel source.
+          # setup.sh clones KernelSU-Next into KernelSU-Next/, symlinks
+          # drivers/kernelsu -> ../KernelSU-Next/kernel, and wires
+          # drivers/Makefile + drivers/Kconfig. Use the `legacy` ref
+          # (4.14 non-GKI); the dev line (v3.4.2) is GKI-focused.
+          # Must run BEFORE the defconfig/merge step, because
+          # CONFIG_KSU only exists after the Kconfig is sourced.
+          cd kernel
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
+          echo "KernelSU-Next resolved commit:"
+          git -C KernelSU-Next rev-parse HEAD
+          test -L drivers/kernelsu
+          grep -q 'kernelsu' drivers/Makefile
+          grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig
+          echo "KernelSU-Next integration OK"
+
+      - name: Fetch prebuilt clang-r530567 (AOSP android-16.0.0_r1)
+        run: |
+          git clone --depth 1 --branch android-16.0.0_r1 \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+            clang-r530567
+          test -x ./clang-r530567/clang-r530567/bin/clang
+          ./clang-r530567/clang-r530567/bin/clang --version | head -1
+
+      - name: Fetch GCC 4.9 cross (aarch64-linux-android)
+        run: |
+          git clone --depth 1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
+            gcc
+          ls gcc/bin | head
+
+      - name: Configure (stock miatoll_defconfig + KernelSU fragment)
+        run: |
+          cd kernel
+          # The defconfig is NOT arch/arm64/configs/miatoll_defconfig
+          # (that path does not exist); it lives at
+          # arch/arm64/configs/vendor/xiaomi/miatoll_defconfig.
+          make O=out ARCH=arm64 vendor/xiaomi/miatoll_defconfig
+          # Merge the KernelSU fragment (CONFIG_KPROBES + CONFIG_KSU).
+          # KPROBES is OFF in the stock miatoll kernel and is required
+          # for the KernelSU kprobe hook path on 4.14.
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config ../ci/kernelsu.config
+          make O=out ARCH=arm64 olddefconfig
+          grep -E 'CONFIG_LTO|CONFIG_LOCALVERSION=|CONFIG_TOUCHSCREEN_FTS_SPI=|CONFIG_KSU=|CONFIG_KPROBES=' out/.config
+
+      - name: Build kernel (ThinLTO ON)
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export PATH="$GITHUB_WORKSPACE/clang-r530567/clang-r530567/bin:$GITHUB_WORKSPACE/gcc/bin:$PATH"
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          make O=out CC=clang LLVM_IAS=1 LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            STRIP=llvm-strip OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
+            DTC=/usr/bin/dtc -j"$(nproc)" 2>&1 | tee ../build.log
+          ls -l out/arch/arm64/boot/Image
+          file out/arch/arm64/boot/Image
+          # Confirm KernelSU is in the built kernel
+          grep -q 'CONFIG_KSU=y' out/.config && echo "CONFIG_KSU=y confirmed"
+
+      - name: Repack boot.img (stock LineageOS boot.img + this kernel)
+        run: |
+          # Build a ready-to-flash boot.img from the stock LineageOS
+          # boot.img (same ROM as installed: 2026-11-16 miatoll
+          # nightly) with only the kernel swapped, so the release
+          # carries both the AnyKernel3 zip and a boot.img.
+          # magiskboot comes from the Magisk APK (the AK3 tools'
+          # magiskboot is ARM-only and cannot run on the runner).
+          # Never pipe magiskboot output to head (SIGPIPE kills it).
+          mkdir -p repack && cd repack
+          curl -sL -o stock-boot.img \
+            https://mirrorbits.lineageos.org/full/miatoll/20261116/boot.img
+          echo "f4135d2ef8d5e28dabef7a3c84506016  stock-boot.img" | md5sum -c -
+          curl -sL -o magisk.apk \
+            https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk
+          unzip -p magisk.apk lib/x86_64/libmagiskboot.so > magiskboot
+          chmod +x magiskboot
+          ./magiskboot unpack stock-boot.img > magiskboot-unpack.log 2>&1
+          cp ../kernel/out/arch/arm64/boot/Image kernel
+          ./magiskboot repack stock-boot.img boot-kernelsu.img > magiskboot-repack.log 2>&1
+          mv boot-kernelsu.img ..
+          cd ..
+          ls -l boot-kernelsu.img
+          md5sum boot-kernelsu.img
+
+      - name: Package AnyKernel3 zip
+        run: |
+          git clone --depth 1 https://github.com/osm0sis/AnyKernel3.git ak3
+          cp kernel/out/arch/arm64/boot/Image ak3/Image
+          cp ci/anykernel.sh ak3/anykernel.sh
+          cd ak3
+          zip -r9 ../miatoll-ft8756-touchfix-kernelsu.zip * -x .git/\*
+          cd ..
+          md5sum miatoll-ft8756-touchfix-kernelsu.zip
+          ls -l miatoll-ft8756-touchfix-kernelsu.zip
+
+      - name: Upload AnyKernel3 zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: miatoll-ft8756-touchfix-kernelsu
+          path: miatoll-ft8756-touchfix-kernelsu.zip
+          if-no-files-found: error
+
+      - name: Upload boot.img
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-kernelsu
+          path: boot-kernelsu.img
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0-kernelsu"
+          TITLE="v1.0-kernelsu — FT8756 touch fix + KernelSU-Next, ThinLTO"
+          ZIP="miatoll-ft8756-touchfix-kernelsu.zip"
+          IMG="boot-kernelsu.img"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" "$IMG" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$IMG" --title "$TITLE" --notes-file ci/release-notes.md
+          fi

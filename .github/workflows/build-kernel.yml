@@ -73,9 +73,10 @@ jobs:
         run: |
           # The CAF tree removed struct cgroup->id (it uses cgroup_id(),
           # the kernfs node id, instead -- the same change mainline made
-          # in 4.15). But include/net/netprio_cgroup.h still uses the
-          # old css->cgroup->id, so CONFIG_CGROUP_NET_PRIO=y fails to
-          # compile. This one-line patch switches netprio to cgroup_id().
+          # in 4.15). But netprio still uses the old css->cgroup->id in
+          # include/net/netprio_cgroup.h and net/core/netprio_cgroup.c,
+          # so CONFIG_CGROUP_NET_PRIO=y fails to compile. This patch
+          # switches all five uses to cgroup_id().
           cd kernel
           git apply --check ../ci/cgroup-netprio-id.patch
           git apply ../ci/cgroup-netprio-id.patch
